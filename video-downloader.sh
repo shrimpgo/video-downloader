@@ -4,7 +4,7 @@ echo -e "|						|"
 echo -e "|               \e[01;91mVideo Downloader\e[01;32m       		|"
 echo -e "|						|"
 echo -e "=================================================\e[0m"
-echo -e "				\e[01;34mby: Shrimp GO\e[00m"
+echo -e "				\e[01;34mby: Renato Pacheco\e[00m"
 
 echo -ne "\e[01mInsert link list: \e[0m"
 read chunk
@@ -68,32 +68,38 @@ while [ $cont -lt $lenseg ]
 echo -e "\n\n\e[01mDownload completed!\e[0m"
 echo -e "\e[01mDecoding and contatenating all of segments in one file...\e[0m"
 
-# Downloading encryption key of video segments
-echo -e "\e[01mAcquiring key...\e[0m"
-key=$(wget -q $(egrep -o 'https://(.*)encryption.key(.*)hmac=([0-9a-f])+' $dir/$lista) -O - | xxd -p)
-
+filekey=$(egrep -o 'https://(.*)encryption.key(.*)hmac=([0-9a-f])+' $dir/$lista)
 iv=$(egrep -o 'IV=([0-9a-z]+)' $dir/$lista | sed 's/IV=0x//')
+
 for i in $(seq 1 $lenseg)
 do
-	# If IV exists in URL, keep that in var iv, if not, every segment file has its IV, corresponding with segment number and padding zeros in
-	# the left until reach 32 digits. Ex.: 00000000000000000000000000000001 corresponding with segment 1.
-	if [ -z $iv ]
+	# If key exists, it's needed to decrypt all of segments
+	if [[ $filekey != "" ]]
 	then
-		if [ $(echo -n $i|wc -c) -eq 1 ]
+		# If IV exists in URL, keep that in var iv, if not, every segment file has its IV, corresponding with segment number and padding zeros in
+		# the left until reach 32 digits. Ex.: 00000000000000000000000000000001 corresponding with segment 1.
+		if [ -z $iv ]
 		then
-			j=$(printf '0%.0s' {1..31})
-		elif [ $(echo -n $i|wc -c) -eq 2 ]
-		then
-			j=$(printf '0%.0s' {1..30})
-		else
-			j=$(printf '0%.0s' {1..29})
+			if [ $(echo -n $i|wc -c) -eq 1 ]
+			then
+				j=$(printf '0%.0s' {1..31})
+			elif [ $(echo -n $i|wc -c) -eq 2 ]
+			then
+				j=$(printf '0%.0s' {1..30})
+			else
+				j=$(printf '0%.0s' {1..29})
+			fi
+		iv=$j$i
 		fi
-	iv=$j$i
+		# Downloading encryption key of video segments
+		key=$(wget -q $filekey -O - | xxd -p 2> /dev/null)
+		# Decrypting every segment with key and IV
+		openssl aes-128-cbc -d -K $key -iv $iv -nosalt -in $dir/seg$i -out $dir/seg$i.mp4
+		# Concatenating all of segments in one file
+		cat $dir/seg$i.mp4 >> $file.mp4
 	fi
-	# Decoding every segment with key and IV
-	openssl aes-128-cbc -d -K $key -iv $iv -nosalt -in $dir/seg$i -out $dir/seg$i.mp4
 	# Concatenating all of segments in one file
-	cat $dir/seg$i.mp4 >> $file.mp4
+	cat $dir/seg$i >> $file.mp4
 done
 echo -e "\e[01mVideo \e[01;93m$file.mp4\e[0m \e[01mcreated!\e[0m\n"
 echo -ne "\e[01mDelete temp files? [S/n] \e[0m"
